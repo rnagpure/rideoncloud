@@ -28,14 +28,14 @@ jobs:
           cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
 
       - name: Terraform Init
-        run: terraform init
+        run: terraform -chdir=./App init
 
       - name: Terraform Plan
         id: plan
-        run: terraform plan -no-color
+        run: terraform -chdir=./App plan -no-color
         continue-on-error: true
 
       - name: Terraform Apply
         # Only runs on pushes to main if the plan was successful
         if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
-        run: terraform apply -auto-approve
+        run: terraform -chdir=./App apply -auto-approve
