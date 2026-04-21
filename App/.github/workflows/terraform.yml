@@ -1,0 +1,41 @@
+name: "Terraform Cloud API Test"
+
+on:
+  push:
+    branches:
+      - develop
+  pull_request:
+
+jobs:
+  terraform:
+    name: "Terraform Action"
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: /App
+    permissions:
+      contents: read
+      pull-requests: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          # This configures the CLI to use your token for all commands
+          cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
+
+      - name: Terraform Init
+        run: terraform init
+
+      - name: Terraform Plan
+        id: plan
+        run: terraform plan -no-color
+        continue-on-error: true
+
+      - name: Terraform Apply
+        # Only runs on pushes to main if the plan was successful
+        if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
+        run: terraform apply -auto-approve
