@@ -12,7 +12,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: rideoncloud/App
+        working-directory: /App
     permissions:
       contents: read
       pull-requests: write
