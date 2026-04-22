@@ -1,5 +1,4 @@
 terraform {
-  required_version = "1.14.9"
 
   cloud {
 
@@ -9,4 +8,8 @@ terraform {
       name = "rideoncloud-test"
     }
   }
+}
+
+provider "aws" {
+  region = "ap-southeast-2"
 }
