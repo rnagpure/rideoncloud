@@ -4,6 +4,10 @@ on:
   push:
     branches:
       - develop
+    paths:
+      - "core/**"
+      - "environments/**"
+      - "modules/**"
   pull_request:
 
 jobs:
