@@ -3,7 +3,6 @@ variable "name_suffix" {
   type        = string
   default     = ""
 }
-
 variable "environment" {
   description = "Environment name"
   type        = string
