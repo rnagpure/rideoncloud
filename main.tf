@@ -1,5 +1,5 @@
 module "s3_app" {
-  source = "../modules/t3"
+  source = "./modules/t3"
 
   bucket_name        = "rideoncloud-assets"
   environment        = var.environment
