@@ -13,7 +13,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: apps
+        working-directory: .
     permissions:
       contents: read
       pull-requests: write
