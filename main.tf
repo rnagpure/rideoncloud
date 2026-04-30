@@ -1,7 +1,7 @@
 module "s3_app" {
   source = "./modules/s3"
 
-  bucket_name        = "rideoncloud-assets"
+  bucket_name        = "homerride"
   environment        = var.environment
   name_suffix        = var.name_suffix
   versioning_enabled = true
