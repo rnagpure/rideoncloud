@@ -1,5 +1,5 @@
 module "s3_app" {
-  source = "..//modules/s3"
+  source = "../modules/s3"
 
   bucket_name        = "homerride"
   environment        = var.environment
