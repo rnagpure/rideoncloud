@@ -21,7 +21,7 @@ jobs:
     steps:
       - name: Clean Terraform Cache
         run: rm -rf .terraform
-        working-directory: ./Apps
+        working-directory: /home/runner/work/rideoncloud/rideoncloud/
 
       - name: Checkout
         uses: actions/checkout@v4
