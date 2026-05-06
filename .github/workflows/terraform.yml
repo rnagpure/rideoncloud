@@ -31,6 +31,8 @@ jobs:
 
       - name: Debug Path
         run: |
+          echo "ENV=$ENV"
+          echo "TFC_WORKSPACE=rideoncloud-$ENV"
           echo "Current Location: $(pwd)"
           ls -F
           ls -F ./app || echo "App folder NOT found here"
