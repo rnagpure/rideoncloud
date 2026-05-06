@@ -25,7 +25,7 @@ jobs:
             main)    ENV="prod"    ;;
           esac
           echo "ENV=$ENV"                     >> $GITHUB_ENV
-          echo "TFC_WORKSPACE=myapp-$ENV"     >> $GITHUB_ENV
+          echo "TFC_WORKSPACE=rideoncloud-$ENV"     >> $GITHUB_ENV
 
       - uses: hashicorp/setup-terraform@v3
 
