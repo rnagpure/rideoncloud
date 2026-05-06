@@ -3,52 +3,132 @@ name: Terraform
 on:
   push:
     branches: [ develop, staging, main ]
+    paths:
+      - "core/**"
+      - "app/**"
+      - "environments/**"
+      - "modules/**"
+      - "*.tf"
+  workflow_dispatch:
+    inputs:
+      module:
+        description: "Which module to deploy"
+        required: true
+        type: choice
+        options:
+          - all
+          - core
+          - app
+      environment:
+        description: "Target environment"
+        required: true
+        type: choice
+        options:
+          - dev
+          - staging
+          - prod
 
 jobs:
+  detect-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      core_changed: ${{ steps.filter.outputs.core }}
+      app_changed: ${{ steps.filter.outputs.app }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            core:
+              - 'core/**'
+              - 'modules/**'
+              - '*.tf'
+            app:
+              - 'app/**'
+              - 'modules/**'
+              - '*.tf'
+
   terraform:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: .
+    needs: detect-changes
     env:
       TF_TOKEN_app_terraform_io: ${{ secrets.TF_API_TOKEN }}
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Resolve environment from branch
+      - name: Resolve environment and targets
+        id: config
         run: |
-          BRANCH="${GITHUB_REF##*/}"
-          case "$BRANCH" in
-            develop) ENV="dev" ;;
-            staging) ENV="staging" ;;
-            main)    ENV="prod"    ;;
+          # ── Environment ──────────────────────────────────────────
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            ENV="${{ github.event.inputs.environment }}"
+          else
+            BRANCH="${GITHUB_REF##*/}"
+            case "$BRANCH" in
+              develop) ENV="dev"     ;;
+              staging) ENV="staging" ;;
+              main)    ENV="prod"    ;;
+            esac
+          fi
+
+          # ── Target flags ─────────────────────────────────────────
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            MODULE="${{ github.event.inputs.module }}"
+          else
+            # auto-detect from changed paths
+            CORE="${{ needs.detect-changes.outputs.core_changed }}"
+            APP="${{ needs.detect-changes.outputs.app_changed }}"
+
+            if [ "$CORE" = "true" ] && [ "$APP" = "true" ]; then
+              MODULE="all"
+            elif [ "$CORE" = "true" ]; then
+              MODULE="core"
+            elif [ "$APP" = "true" ]; then
+              MODULE="app"
+            else
+              MODULE="none"
+            fi
+          fi
+
+          # ── Build -target args ────────────────────────────────────
+          case "$MODULE" in
+            core) TARGET="-target=module.core" ;;
+            app)  TARGET="-target=module.app"  ;;
+            all)  TARGET=""                    ;;
+            none) TARGET="skip"                ;;
           esac
-          echo "ENV=$ENV"                     >> $GITHUB_ENV
-          echo "TFC_WORKSPACE=rideoncloud-$ENV"     >> $GITHUB_ENV
+
+          echo "env=$ENV"                        >> $GITHUB_OUTPUT
+          echo "workspace=myapp-$ENV"            >> $GITHUB_OUTPUT
+          echo "target=$TARGET"                  >> $GITHUB_OUTPUT
+          echo "module=$MODULE"                  >> $GITHUB_OUTPUT
+
+      - name: Skip if no relevant changes
+        if: steps.config.outputs.target == 'skip'
+        run: |
+          echo "No relevant changes detected. Skipping deploy."
+          exit 0
 
       - uses: hashicorp/setup-terraform@v3
 
-      - name: Debug Path
-        run: |
-          echo "ENV=$ENV"
-          echo "TFC_WORKSPACE=rideoncloud-$ENV"
-          echo "Current Location: $(pwd)"
-          ls -F
-          ls -F ./app || echo "App folder NOT found here"
-        working-directory: .
-
       - name: Terraform Init
+        if: steps.config.outputs.target != 'skip'
         run: terraform init
 
       - name: Terraform Plan
+        if: steps.config.outputs.target != 'skip'
         run: |
           terraform plan \
-            -var-file="environments/${{ env.ENV }}.tfvars" \
-            -var="tfc_workspace=${{ env.TFC_WORKSPACE }}"
+            ${{ steps.config.outputs.target }} \
+            -var-file="environments/${{ steps.config.outputs.env }}.tfvars" \
+            -var="tfc_workspace=${{ steps.config.outputs.workspace }}"
 
       - name: Terraform Apply
+        if: steps.config.outputs.target != 'skip'
         run: |
           terraform apply -auto-approve \
-            -var-file="environments/${{ env.ENV }}.tfvars" \
-            -var="tfc_workspace=${{ env.TFC_WORKSPACE }}"
+            ${{ steps.config.outputs.target }} \
+            -var-file="environments/${{ steps.config.outputs.env }}.tfvars" \
+            -var="tfc_workspace=${{ steps.config.outputs.workspace }}"
