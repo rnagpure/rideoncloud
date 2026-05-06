@@ -1,44 +1,42 @@
-name: "Terraform Cloud API Test"
+name: Terraform
 
 on:
   push:
-    branches:
-      - develop
-
-  pull_request:
+    branches: [ develop, staging, main ]
 
 jobs:
   terraform:
-    name: "Terraform Action"
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: ./Apps
-    permissions:
-      contents: read
-      pull-requests: write
+    env:
+      TF_TOKEN_app_terraform_io: ${{ secrets.TF_API_TOKEN }}
 
     steps:
+      - uses: actions/checkout@v4
 
-      - name: Checkout
-        uses: actions/checkout@v4
+      - name: Resolve environment from branch
+        run: |
+          BRANCH="${GITHUB_REF##*/}"
+          case "$BRANCH" in
+            develop) ENV="dev" ;;
+            staging) ENV="staging" ;;
+            main)    ENV="prod"    ;;
+          esac
+          echo "ENV=$ENV"                     >> $GITHUB_ENV
+          echo "TFC_WORKSPACE=myapp-$ENV"     >> $GITHUB_ENV
 
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
-        with:
-          # This configures the CLI to use your token for all commands
-          cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
+      - uses: hashicorp/setup-terraform@v3
 
       - name: Terraform Init
-        run: terraform  init
-        working-directory: ./Apps
+        run: terraform init
 
       - name: Terraform Plan
-        id: plan
-        run: terraform  plan -no-color
-        continue-on-error: true
+        run: |
+          terraform plan \
+            -var-file="environments/${{ env.ENV }}.tfvars" \
+            -var="tfc_workspace=${{ env.TFC_WORKSPACE }}"
 
       - name: Terraform Apply
-        # Only runs on pushes to main if the plan was successful
-        if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
-        run: terraform  apply -auto-approve
+        run: |
+          terraform apply -auto-approve \
+            -var-file="environments/${{ env.ENV }}.tfvars" \
+            -var="tfc_workspace=${{ env.TFC_WORKSPACE }}"
