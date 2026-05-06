@@ -54,7 +54,7 @@ jobs:
     needs: detect-changes
     env:
       TF_TOKEN_app_terraform_io: ${{ secrets.TF_API_TOKEN }}
-
+      TF_WORKSPACE: rideoncloud-${{ steps.config.outputs.env }}
     steps:
       - uses: actions/checkout@v4
 
@@ -112,10 +112,6 @@ jobs:
           exit 0
 
       - uses: hashicorp/setup-terraform@v3
-
-      - name: Debug Path
-        run: |
-          export TF_WORKSPACE=${{ steps.config.outputs.workspace }}
 
       - name: Terraform Init
         if: steps.config.outputs.target != 'skip'
