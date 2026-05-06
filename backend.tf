@@ -2,7 +2,7 @@ terraform {
   cloud {
     organization = "CloudHome"
     workspaces {
-      name = var.tfc_workspace # e.g. "myapp-dev"
+      name = "rideoncloud-dev" # e.g. "myapp-dev"
     }
   }
 }
