@@ -1,2 +1,2 @@
 environment = "dev"
-name_suffix = "anything"
+name_suffix = "anythingfromdevenv"

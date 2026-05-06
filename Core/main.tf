@@ -1,7 +1,7 @@
 module "s3_core_app" {
   source = "../modules/s3"
 
-  bucket_name        = "homerride"
+  bucket_name        = "coredata"
   environment        = var.environment
   name_suffix        = var.name_suffix
   versioning_enabled = true
