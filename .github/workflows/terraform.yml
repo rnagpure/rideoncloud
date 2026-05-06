@@ -54,7 +54,7 @@ jobs:
     needs: detect-changes
     env:
       TF_TOKEN_app_terraform_io: ${{ secrets.TF_API_TOKEN }}
-      TF_WORKSPACE: rideoncloud-${{ steps.config.outputs.env }}
+      TF_WORKSPACE: rideoncloud-dev
     steps:
       - uses: actions/checkout@v4
 
