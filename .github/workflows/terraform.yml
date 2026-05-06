@@ -41,11 +41,11 @@ jobs:
         with:
           filters: |
             core:
-              - 'core/**'
+              - 'Core/**'
               - 'modules/**'
               - '*.tf'
             app:
-              - 'app/**'
+              - 'App/**'
               - 'modules/**'
               - '*.tf'
 
