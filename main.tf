@@ -1,12 +1,12 @@
 module "core" {
-  source = "./core"
+  source = "./Core"
 
   environment = var.environment
   name_suffix = var.name_suffix
 }
 
 module "apps" {
-  source = "./app"
+  source = "./Apps"
 
   environment = var.environment
   name_suffix = var.name_suffix
