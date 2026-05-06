@@ -53,6 +53,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: detect-changes
     env:
+      TF_WORKSPACE: ${{ steps.config.outputs.workspace }}
       TF_TOKEN_app_terraform_io: ${{ secrets.TF_API_TOKEN }}
 
     steps:
@@ -101,7 +102,7 @@ jobs:
           esac
 
           echo "env=$ENV"                        >> $GITHUB_OUTPUT
-          echo "workspace=myapp-$ENV"            >> $GITHUB_OUTPUT
+          echo "workspace=rideoncloud-$ENV"      >> $GITHUB_OUTPUT
           echo "target=$TARGET"                  >> $GITHUB_OUTPUT
           echo "module=$MODULE"                  >> $GITHUB_OUTPUT
 
