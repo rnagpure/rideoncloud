@@ -4,7 +4,7 @@ module "core" {
   environment = var.environment
   name_suffix = var.name_suffix
 
-module "app" {
+module "apps" {
   source = "./app"
 
   environment        = var.environment
