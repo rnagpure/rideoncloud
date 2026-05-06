@@ -115,7 +115,8 @@ jobs:
 
       - name: Terraform Init
         if: steps.config.outputs.target != 'skip'
-        run: terraform init -backend-config="name=${{steps.config.outputs.workspace }}"
+        run: terraform init
+          -backend-config="workspace={name=${{steps.config.outputs.workspace}}}"
 
       - name: Terraform Plan
         if: steps.config.outputs.target != 'skip'
