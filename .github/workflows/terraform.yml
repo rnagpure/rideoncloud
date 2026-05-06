@@ -4,8 +4,8 @@ on:
   push:
     branches: [ develop, staging, main ]
     paths:
-      - "core/**"
-      - "app/**"
+      - "Core/**"
+      - "App/**"
       - "environments/**"
       - "modules/**"
       - "*.tf"
