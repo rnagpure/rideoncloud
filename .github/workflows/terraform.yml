@@ -29,6 +29,13 @@ jobs:
 
       - uses: hashicorp/setup-terraform@v3
 
+      - name: Debug Path
+        run: |
+          echo "Current Location: $(pwd)"
+          ls -F
+          ls -F ./app || echo "App folder NOT found here"
+        working-directory: .
+
       - name: Terraform Init
         run: terraform init
 
