@@ -2,7 +2,7 @@ terraform {
   cloud {
     organization = "CloudHome"
     workspaces {
-      tags = ["rideoncloud"]
+      tags = ["tags:rideoncloud"]
     }
   }
 }
