@@ -115,7 +115,7 @@ jobs:
 
       - name: Terraform Init
         env:
-          TF_WORKSPACE: ${{ steps.config.outputs.workspace }}
+          TF_CLOUD_WORKSPACE: ${{ steps.config.outputs.workspace }}
         if: steps.config.outputs.target != 'skip'
         run: terraform init
 
