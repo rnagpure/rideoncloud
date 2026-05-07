@@ -1,9 +1,7 @@
 terraform {
   cloud {
     organization = "CloudHome"
-    workspaces {
-      tags = ["placeholder"]
-    }
+
   }
 }
 
