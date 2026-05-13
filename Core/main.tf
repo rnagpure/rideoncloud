@@ -28,6 +28,6 @@ module "s3_core_app" {
   ]
 
   tags = {
-    Layer = "application"
+    Layer = "Core"
   }
 }
