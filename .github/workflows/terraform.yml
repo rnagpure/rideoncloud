@@ -2,7 +2,7 @@ name: Terraform
 
 on:
   push:
-    branches: [ develop, staging, main ]
+    branches: [develop, staging, main]
     paths:
       - "Core/**"
       - "App/**"
@@ -53,9 +53,8 @@ jobs:
     runs-on: ubuntu-latest
     needs: detect-changes
     env:
-
       TF_TOKEN_app_terraform_io: ${{ secrets.TF_API_TOKEN }}
-
+      TF_WORKSPACE: rideoncloud-dev
     steps:
       - uses: actions/checkout@v4
 
@@ -113,10 +112,6 @@ jobs:
           exit 0
 
       - uses: hashicorp/setup-terraform@v3
-
-      - name: Set TF_WORKSPACE
-        if: steps.config.outputs.target != 'skip'
-        run: echo "TF_WORKSPACE=${{ steps.config.outputs.workspace }}" >> $GITHUB_ENV
 
       - name: Terraform Init
         if: steps.config.outputs.target != 'skip'
