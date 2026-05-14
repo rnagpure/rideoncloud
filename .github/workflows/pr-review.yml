@@ -22,8 +22,7 @@ on:
 
 env:
   TF_TOKEN_app_terraform_io: ${{ secrets.TF_API_TOKEN }}
-  TFC_ORG: CloudHome
-  PREVIEW_WORKSPACE_TAG: rideoncloud
+  TF_WORKSPACE: rideoncloud-preview
 
 jobs:
   # ── Deploy preview ───────────────────────────────────────────────
@@ -59,13 +58,11 @@ jobs:
               | sed 's/[^a-z0-9-]/-/g')
           fi
 
-          TF_STATE_WORKSPACE="pr-${USERNAME}-${PR_NUMBER}"
           WORKSPACE_SUFFIX="pr-${USERNAME}-${PR_NUMBER}"
 
-          echo "pr_number=$PR_NUMBER"                     >> $GITHUB_OUTPUT
-          echo "username=$USERNAME"                       >> $GITHUB_OUTPUT
-          echo "tf_state_workspace=$TF_STATE_WORKSPACE"   >> $GITHUB_OUTPUT
-          echo "workspace_suffix=$WORKSPACE_SUFFIX"       >> $GITHUB_OUTPUT
+          echo "pr_number=$PR_NUMBER"           >> $GITHUB_OUTPUT
+          echo "username=$USERNAME"             >> $GITHUB_OUTPUT
+          echo "workspace_suffix=$WORKSPACE_SUFFIX" >> $GITHUB_OUTPUT
 
       - name: Resolve deployment target
         id: target
@@ -77,7 +74,6 @@ jobs:
               all)  TARGET=""                    ; DEPLOYED="core + app" ;;
             esac
           else
-            # Label trigger — deploy everything by default
             TARGET=""
             DEPLOYED="core + app"
           fi
@@ -86,12 +82,6 @@ jobs:
           echo "deployed=$DEPLOYED" >> $GITHUB_OUTPUT
 
       - uses: hashicorp/setup-terraform@v3
-
-      # ── Set TF_WORKSPACE to the PR state workspace directly ───────
-      # TFC auto-creates it on init if it doesn't exist
-      - name: Set TF_WORKSPACE
-        run: |
-          echo "TF_WORKSPACE=${{ steps.pr.outputs.tf_state_workspace }}" >> $GITHUB_ENV
 
       - name: Terraform Init
         run: terraform init
@@ -106,7 +96,7 @@ jobs:
               -target=module.core \
               -var-file="environments/pr.tfvars" \
               -var="workspace_suffix=${{ steps.pr.outputs.workspace_suffix }}" \
-              -var="tfc_workspace=${{ steps.pr.outputs.tf_state_workspace }}"
+              -var="tfc_workspace=rideoncloud-preview"
           else
             echo "Core exists — skipping bootstrap."
           fi
@@ -117,7 +107,7 @@ jobs:
             ${{ steps.target.outputs.target }} \
             -var-file="environments/pr.tfvars" \
             -var="workspace_suffix=${{ steps.pr.outputs.workspace_suffix }}" \
-            -var="tfc_workspace=${{ steps.pr.outputs.tf_state_workspace }}"
+            -var="tfc_workspace=rideoncloud-preview"
 
       - name: Terraform Apply
         run: |
@@ -125,7 +115,7 @@ jobs:
             ${{ steps.target.outputs.target }} \
             -var-file="environments/pr.tfvars" \
             -var="workspace_suffix=${{ steps.pr.outputs.workspace_suffix }}" \
-            -var="tfc_workspace=${{ steps.pr.outputs.tf_state_workspace }}"
+            -var="tfc_workspace=rideoncloud-preview"
 
       - name: Comment on PR
         uses: actions/github-script@v7
@@ -143,8 +133,8 @@ jobs:
             | | |
             |---|---|
             | **Developer** | \`${{ steps.pr.outputs.username }}\` |
-            | **TFC Workspace** | \`${{ env.PREVIEW_WORKSPACE }}\` |
-            | **State key** | \`${{ steps.pr.outputs.tf_state_workspace }}\` |
+            | **TFC Workspace** | \`rideoncloud-preview\` |
+            | **Resource suffix** | \`${{ steps.pr.outputs.workspace_suffix }}\` |
             | **Deployed** | \`${{ steps.target.outputs.deployed }}\` |
             | **Trigger** | ${trigger} |
             | **Status** | ✅ Running |
@@ -185,75 +175,25 @@ jobs:
               | sed 's/[^a-z0-9-]/-/g')
           fi
 
-          TF_STATE_WORKSPACE="pr-${USERNAME}-${PR_NUMBER}"
           WORKSPACE_SUFFIX="pr-${USERNAME}-${PR_NUMBER}"
 
-          echo "pr_number=$PR_NUMBER"                     >> $GITHUB_OUTPUT
-          echo "username=$USERNAME"                       >> $GITHUB_OUTPUT
-          echo "tf_state_workspace=$TF_STATE_WORKSPACE"   >> $GITHUB_OUTPUT
-          echo "workspace_suffix=$WORKSPACE_SUFFIX"       >> $GITHUB_OUTPUT
+          echo "pr_number=$PR_NUMBER"               >> $GITHUB_OUTPUT
+          echo "username=$USERNAME"                 >> $GITHUB_OUTPUT
+          echo "workspace_suffix=$WORKSPACE_SUFFIX" >> $GITHUB_OUTPUT
 
       - uses: hashicorp/setup-terraform@v3
-
-      # ── Set TF_WORKSPACE to PR state workspace ────────────────────
-      - name: Set TF_WORKSPACE
-        run: |
-          echo "TF_WORKSPACE=${{ steps.pr.outputs.tf_state_workspace }}" >> $GITHUB_ENV
 
       - name: Terraform Init
         run: terraform init
 
-      # ── Check existence via TFC API instead of workspace list ─────
-      # terraform workspace list also conflicts with TF_WORKSPACE
-      - name: Check if preview state workspace exists
-        id: check
-        run: |
-          WS_NAME="${{ steps.pr.outputs.tf_state_workspace }}"
-          ORG="${{ env.TFC_ORG }}"
-
-          STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
-            --header "Authorization: Bearer ${{ secrets.TF_API_TOKEN }}" \
-            "https://app.terraform.io/api/v2/organizations/${ORG}/workspaces/${WS_NAME}")
-
-          if [ "$STATUS" = "200" ]; then
-            echo "exists=true" >> $GITHUB_OUTPUT
-          else
-            echo "exists=false" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Skip if preview was never deployed
-        if: steps.check.outputs.exists == 'false'
-        run: |
-          echo "Workspace ${{ steps.pr.outputs.tf_state_workspace }} not found."
-          echo "Preview was never deployed — nothing to destroy."
-          exit 0
-
       - name: Terraform Destroy
-        if: steps.check.outputs.exists == 'true'
         run: |
           terraform apply -destroy -auto-approve \
             -var-file="environments/pr.tfvars" \
             -var="workspace_suffix=${{ steps.pr.outputs.workspace_suffix }}" \
-            -var="tfc_workspace=${{ steps.pr.outputs.tf_state_workspace }}"
-
-      # ── Delete workspace via TFC API — workspace delete command ───
-      # also conflicts with TF_WORKSPACE so use API instead
-      - name: Delete TFC state workspace
-        if: steps.check.outputs.exists == 'true'
-        run: |
-          WS_NAME="${{ steps.pr.outputs.tf_state_workspace }}"
-          ORG="${{ env.TFC_ORG }}"
-
-          curl -s \
-            --header "Authorization: Bearer ${{ secrets.TF_API_TOKEN }}" \
-            --header "Content-Type: application/vnd.api+json" \
-            --request DELETE \
-            "https://app.terraform.io/api/v2/organizations/${ORG}/workspaces/${WS_NAME}"
-
-          echo "Workspace ${WS_NAME} deleted."
+            -var="tfc_workspace=rideoncloud-preview"
 
       - name: Comment on PR
-        if: steps.check.outputs.exists != '0'
         uses: actions/github-script@v7
         with:
           script: |
@@ -271,8 +211,8 @@ jobs:
             | | |
             |---|---|
             | **Developer** | \`${{ steps.pr.outputs.username }}\` |
-            | **TFC Workspace** | \`${{ env.PREVIEW_WORKSPACE }}\` |
-            | **State key** | \`${{ steps.pr.outputs.tf_state_workspace }}\` deleted |
+            | **TFC Workspace** | \`rideoncloud-preview\` |
+            | **Resource suffix** | \`${{ steps.pr.outputs.workspace_suffix }}\` |
             | **Reason** | ${reason} |
             | **Status** | ✅ Destroyed |`
             })
