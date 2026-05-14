@@ -1,11 +1,9 @@
 name: PR Preview Environment
 
 on:
-  # Auto trigger when label is added
   pull_request:
     types: [labeled, unlabeled, closed]
 
-  # Manual trigger
   workflow_dispatch:
     inputs:
       pr_number:
@@ -24,6 +22,7 @@ on:
 
 env:
   TF_TOKEN_app_terraform_io: ${{ secrets.TF_API_TOKEN }}
+  PREVIEW_WORKSPACE: rideoncloud-preview # matches your rideoncloud-dev/staging/prod pattern
 
 jobs:
   # ── Deploy preview ───────────────────────────────────────────────
@@ -72,9 +71,9 @@ jobs:
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             case "${{ github.event.inputs.module }}" in
-              core) TARGET="-target=module.core" ; DEPLOYED="core only"  ;;
-              app)  TARGET="-target=module.app"  ; DEPLOYED="app only"   ;;
-              all)  TARGET=""                    ; DEPLOYED="core + app"  ;;
+              core) TARGET="-target=module.core" ; DEPLOYED="core only" ;;
+              app)  TARGET="-target=module.app"  ; DEPLOYED="app only"  ;;
+              all)  TARGET=""                    ; DEPLOYED="core + app" ;;
             esac
           else
             # Label trigger — deploy everything by default
@@ -87,9 +86,14 @@ jobs:
 
       - uses: hashicorp/setup-terraform@v3
 
+      # ── FIX 1: TF_WORKSPACE must be set before init ──────────────
+      - name: Set TF_WORKSPACE
+        run: echo "TF_WORKSPACE=${{ env.PREVIEW_WORKSPACE }}" >> $GITHUB_ENV
+
       - name: Terraform Init
         run: terraform init
 
+      # ── FIX 2: workspace select/new after init ───────────────────
       - name: Select or create Terraform state workspace
         run: |
           terraform workspace select ${{ steps.pr.outputs.tf_state_workspace }} \
@@ -104,24 +108,28 @@ jobs:
             terraform apply -auto-approve \
               -target=module.core \
               -var-file="environments/pr.tfvars" \
-              -var="workspace_suffix=${{ steps.pr.outputs.workspace_suffix }}"
+              -var="workspace_suffix=${{ steps.pr.outputs.workspace_suffix }}" \
+              -var="tfc_workspace=${{ env.PREVIEW_WORKSPACE }}"
           else
             echo "Core exists — skipping bootstrap."
           fi
 
+      # ── FIX 3: add -var="tfc_workspace=..." to match existing workflow
       - name: Terraform Plan
         run: |
           terraform plan \
             ${{ steps.target.outputs.target }} \
             -var-file="environments/pr.tfvars" \
-            -var="workspace_suffix=${{ steps.pr.outputs.workspace_suffix }}"
+            -var="workspace_suffix=${{ steps.pr.outputs.workspace_suffix }}" \
+            -var="tfc_workspace=${{ env.PREVIEW_WORKSPACE }}"
 
       - name: Terraform Apply
         run: |
           terraform apply -auto-approve \
             ${{ steps.target.outputs.target }} \
             -var-file="environments/pr.tfvars" \
-            -var="workspace_suffix=${{ steps.pr.outputs.workspace_suffix }}"
+            -var="workspace_suffix=${{ steps.pr.outputs.workspace_suffix }}" \
+            -var="tfc_workspace=${{ env.PREVIEW_WORKSPACE }}"
 
       - name: Comment on PR
         uses: actions/github-script@v7
@@ -139,7 +147,7 @@ jobs:
             | | |
             |---|---|
             | **Developer** | \`${{ steps.pr.outputs.username }}\` |
-            | **TFC Workspace** | \`myapp-preview\` |
+            | **TFC Workspace** | \`${{ env.PREVIEW_WORKSPACE }}\` |
             | **State key** | \`${{ steps.pr.outputs.tf_state_workspace }}\` |
             | **Deployed** | \`${{ steps.target.outputs.deployed }}\` |
             | **Trigger** | ${trigger} |
@@ -191,9 +199,14 @@ jobs:
 
       - uses: hashicorp/setup-terraform@v3
 
+      # ── FIX 4: TF_WORKSPACE must be set before init ──────────────
+      - name: Set TF_WORKSPACE
+        run: echo "TF_WORKSPACE=${{ env.PREVIEW_WORKSPACE }}" >> $GITHUB_ENV
+
       - name: Terraform Init
         run: terraform init
 
+      # ── FIX 5: workspace list needs TF_WORKSPACE set first ───────
       - name: Check if preview state workspace exists
         id: check
         run: |
@@ -212,12 +225,14 @@ jobs:
         if: steps.check.outputs.exists != '0'
         run: terraform workspace select ${{ steps.pr.outputs.tf_state_workspace }}
 
+      # ── FIX 6: add -var="tfc_workspace=..." to destroy ───────────
       - name: Terraform Destroy
         if: steps.check.outputs.exists != '0'
         run: |
           terraform apply -destroy -auto-approve \
             -var-file="environments/pr.tfvars" \
-            -var="workspace_suffix=${{ steps.pr.outputs.workspace_suffix }}"
+            -var="workspace_suffix=${{ steps.pr.outputs.workspace_suffix }}" \
+            -var="tfc_workspace=${{ env.PREVIEW_WORKSPACE }}"
 
       - name: Clean up state workspace
         if: steps.check.outputs.exists != '0'
@@ -244,7 +259,7 @@ jobs:
             | | |
             |---|---|
             | **Developer** | \`${{ steps.pr.outputs.username }}\` |
-            | **TFC Workspace** | \`myapp-preview\` |
+            | **TFC Workspace** | \`${{ env.PREVIEW_WORKSPACE }}\` |
             | **State key** | \`${{ steps.pr.outputs.tf_state_workspace }}\` deleted |
             | **Reason** | ${reason} |
             | **Status** | ✅ Destroyed |`
