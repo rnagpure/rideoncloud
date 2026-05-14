@@ -1,0 +1,251 @@
+name: PR Preview Environment
+
+on:
+  # Auto trigger when label is added
+  pull_request:
+    types: [labeled, unlabeled, closed]
+
+  # Manual trigger
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: "PR number"
+        required: true
+      module:
+        description: "Which module to deploy"
+        required: true
+        type: choice
+        options: [all, core, app]
+      action:
+        description: "Deploy or destroy"
+        required: true
+        type: choice
+        options: [deploy, destroy]
+
+env:
+  TF_TOKEN_app_terraform_io: ${{ secrets.TF_API_TOKEN }}
+
+jobs:
+  # ── Deploy preview ───────────────────────────────────────────────
+  deploy:
+    if: |
+      (github.event_name == 'pull_request' &&
+       github.event.action == 'labeled' &&
+       github.event.label.name == 'preview-env') ||
+      (github.event_name == 'workflow_dispatch' &&
+       github.event.inputs.action == 'deploy')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve PR details
+        id: pr
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            PR_NUMBER="${{ github.event.inputs.pr_number }}"
+
+            PR_DATA=$(curl -s \
+              --header "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+              "https://api.github.com/repos/${{ github.repository }}/pulls/${PR_NUMBER}")
+
+            USERNAME=$(echo "$PR_DATA" \
+              | jq -r '.user.login' \
+              | tr '[:upper:]' '[:lower:]' \
+              | sed 's/[^a-z0-9-]/-/g')
+          else
+            PR_NUMBER="${{ github.event.pull_request.number }}"
+            USERNAME=$(echo "${{ github.event.pull_request.user.login }}" \
+              | tr '[:upper:]' '[:lower:]' \
+              | sed 's/[^a-z0-9-]/-/g')
+          fi
+
+          TF_STATE_WORKSPACE="pr-${USERNAME}-${PR_NUMBER}"
+          WORKSPACE_SUFFIX="pr-${USERNAME}-${PR_NUMBER}"
+
+          echo "pr_number=$PR_NUMBER"                     >> $GITHUB_OUTPUT
+          echo "username=$USERNAME"                       >> $GITHUB_OUTPUT
+          echo "tf_state_workspace=$TF_STATE_WORKSPACE"   >> $GITHUB_OUTPUT
+          echo "workspace_suffix=$WORKSPACE_SUFFIX"       >> $GITHUB_OUTPUT
+
+      - name: Resolve deployment target
+        id: target
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            case "${{ github.event.inputs.module }}" in
+              core) TARGET="-target=module.core" ; DEPLOYED="core only"  ;;
+              app)  TARGET="-target=module.app"  ; DEPLOYED="app only"   ;;
+              all)  TARGET=""                    ; DEPLOYED="core + app"  ;;
+            esac
+          else
+            # Label trigger — deploy everything by default
+            TARGET=""
+            DEPLOYED="core + app"
+          fi
+
+          echo "target=$TARGET"     >> $GITHUB_OUTPUT
+          echo "deployed=$DEPLOYED" >> $GITHUB_OUTPUT
+
+      - uses: hashicorp/setup-terraform@v3
+
+      - name: Terraform Init
+        run: terraform init
+
+      - name: Select or create Terraform state workspace
+        run: |
+          terraform workspace select ${{ steps.pr.outputs.tf_state_workspace }} \
+            || terraform workspace new ${{ steps.pr.outputs.tf_state_workspace }}
+
+      - name: Bootstrap core if deploying app into fresh state
+        if: steps.target.outputs.target == '-target=module.app'
+        run: |
+          CORE_EXISTS=$(terraform state list 2>/dev/null | grep "^module.core" | wc -l)
+          if [ "$CORE_EXISTS" = "0" ]; then
+            echo "Core not in state — bootstrapping first..."
+            terraform apply -auto-approve \
+              -target=module.core \
+              -var-file="environments/pr.tfvars" \
+              -var="workspace_suffix=${{ steps.pr.outputs.workspace_suffix }}"
+          else
+            echo "Core exists — skipping bootstrap."
+          fi
+
+      - name: Terraform Plan
+        run: |
+          terraform plan \
+            ${{ steps.target.outputs.target }} \
+            -var-file="environments/pr.tfvars" \
+            -var="workspace_suffix=${{ steps.pr.outputs.workspace_suffix }}"
+
+      - name: Terraform Apply
+        run: |
+          terraform apply -auto-approve \
+            ${{ steps.target.outputs.target }} \
+            -var-file="environments/pr.tfvars" \
+            -var="workspace_suffix=${{ steps.pr.outputs.workspace_suffix }}"
+
+      - name: Comment on PR
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const trigger = '${{ github.event_name }}' === 'workflow_dispatch'
+              ? '🖐 Manual dispatch'
+              : '🏷 Label: preview-env';
+            github.rest.issues.createComment({
+              issue_number: ${{ steps.pr.outputs.pr_number }},
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `## 🚀 Preview environment deployed
+
+            | | |
+            |---|---|
+            | **Developer** | \`${{ steps.pr.outputs.username }}\` |
+            | **TFC Workspace** | \`myapp-preview\` |
+            | **State key** | \`${{ steps.pr.outputs.tf_state_workspace }}\` |
+            | **Deployed** | \`${{ steps.target.outputs.deployed }}\` |
+            | **Trigger** | ${trigger} |
+            | **Status** | ✅ Running |
+
+            > Automatically destroyed when this PR is merged or closed.`
+            })
+
+  # ── Destroy preview on PR close or label removed ─────────────────
+  destroy:
+    if: |
+      (github.event_name == 'pull_request' &&
+       github.event.action == 'closed') ||
+      (github.event_name == 'pull_request' &&
+       github.event.action == 'unlabeled' &&
+       github.event.label.name == 'preview-env') ||
+      (github.event_name == 'workflow_dispatch' &&
+       github.event.inputs.action == 'destroy')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve PR details
+        id: pr
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            PR_NUMBER="${{ github.event.inputs.pr_number }}"
+            PR_DATA=$(curl -s \
+              --header "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+              "https://api.github.com/repos/${{ github.repository }}/pulls/${PR_NUMBER}")
+            USERNAME=$(echo "$PR_DATA" \
+              | jq -r '.user.login' \
+              | tr '[:upper:]' '[:lower:]' \
+              | sed 's/[^a-z0-9-]/-/g')
+          else
+            PR_NUMBER="${{ github.event.pull_request.number }}"
+            USERNAME=$(echo "${{ github.event.pull_request.user.login }}" \
+              | tr '[:upper:]' '[:lower:]' \
+              | sed 's/[^a-z0-9-]/-/g')
+          fi
+
+          TF_STATE_WORKSPACE="pr-${USERNAME}-${PR_NUMBER}"
+          WORKSPACE_SUFFIX="pr-${USERNAME}-${PR_NUMBER}"
+
+          echo "pr_number=$PR_NUMBER"                     >> $GITHUB_OUTPUT
+          echo "username=$USERNAME"                       >> $GITHUB_OUTPUT
+          echo "tf_state_workspace=$TF_STATE_WORKSPACE"   >> $GITHUB_OUTPUT
+          echo "workspace_suffix=$WORKSPACE_SUFFIX"       >> $GITHUB_OUTPUT
+
+      - uses: hashicorp/setup-terraform@v3
+
+      - name: Terraform Init
+        run: terraform init
+
+      - name: Check if preview state workspace exists
+        id: check
+        run: |
+          EXISTS=$(terraform workspace list \
+            | grep -w "${{ steps.pr.outputs.tf_state_workspace }}" | wc -l)
+          echo "exists=$EXISTS" >> $GITHUB_OUTPUT
+
+      - name: Skip if preview was never deployed
+        if: steps.check.outputs.exists == '0'
+        run: |
+          echo "No preview state workspace found for ${{ steps.pr.outputs.tf_state_workspace }}."
+          echo "Preview was never deployed — nothing to destroy."
+          exit 0
+
+      - name: Select Terraform state workspace
+        if: steps.check.outputs.exists != '0'
+        run: terraform workspace select ${{ steps.pr.outputs.tf_state_workspace }}
+
+      - name: Terraform Destroy
+        if: steps.check.outputs.exists != '0'
+        run: |
+          terraform apply -destroy -auto-approve \
+            -var-file="environments/pr.tfvars" \
+            -var="workspace_suffix=${{ steps.pr.outputs.workspace_suffix }}"
+
+      - name: Clean up state workspace
+        if: steps.check.outputs.exists != '0'
+        run: |
+          terraform workspace select default
+          terraform workspace delete ${{ steps.pr.outputs.tf_state_workspace }}
+
+      - name: Comment on PR
+        if: steps.check.outputs.exists != '0'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const reason = '${{ github.event.action }}' === 'unlabeled'
+              ? '🏷 Label removed'
+              : '${{ github.event_name }}' === 'workflow_dispatch'
+                ? '🖐 Manual dispatch'
+                : '🔀 PR merged/closed';
+            github.rest.issues.createComment({
+              issue_number: ${{ steps.pr.outputs.pr_number }},
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `## 🗑️ Preview environment destroyed
+
+            | | |
+            |---|---|
+            | **Developer** | \`${{ steps.pr.outputs.username }}\` |
+            | **TFC Workspace** | \`myapp-preview\` |
+            | **State key** | \`${{ steps.pr.outputs.tf_state_workspace }}\` deleted |
+            | **Reason** | ${reason} |
+            | **Status** | ✅ Destroyed |`
+            })
